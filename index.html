@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>一畳パネル</title>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#ece6d6;
+  --dim:#8d8878;
+  --gold:#f2c14e;
+}
+html,body{height:100%;margin:0;background:#000}
+body{
+  color:var(--ink);
+  font-family:"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif;
+  box-sizing:border-box;
+  padding:4vmin 5vw;
+  overflow:hidden;
+  cursor:none;
+  display:grid;
+  grid-template-columns:1fr;
+  align-items:center;
+  gap:4vw;
+}
+body.has-video{grid-template-columns:1.1fr 1fr}
+.time{
+  font-weight:700;
+  font-size:min(24vw,44vh);
+  line-height:.95;
+  margin:0;
+  font-variant-numeric:tabular-nums;
+}
+body.has-video .time{font-size:min(15vw,32vh)}
+.time .sec{font-size:.28em;color:var(--dim);font-weight:500;margin-left:.15em}
+.date{font-size:min(5vw,8vh);font-weight:500;margin:2vh 0 0;letter-spacing:.12em}
+body.has-video .date{font-size:min(3.4vw,6vh)}
+.count{margin:4vh 0 0;font-size:min(4.4vw,7vh);color:var(--dim);letter-spacing:.08em}
+body.has-video .count{font-size:min(2.8vw,5vh)}
+.count b{color:var(--gold);font-size:1.9em;font-weight:700;margin:0 .12em;font-variant-numeric:tabular-nums}
+.wx{margin:4vh 0 0;font-size:min(3.6vw,6vh);letter-spacing:.06em}
+body.has-video .wx{font-size:min(2.4vw,4.4vh)}
+.wx .now{font-size:1.7em;font-weight:700}
+.wx .sub{color:var(--dim);margin-left:.6em}
+.video{display:none;width:100%;aspect-ratio:16/9}
+body.has-video .video{display:block}
+.video iframe{width:100%;height:100%;border:0;background:#000}
+.hint{position:fixed;right:3vmin;bottom:2vmin;font-size:min(1.8vw,2.6vh);color:#3d3a32}
+</style>
+</head>
+<body>
+<main>
+  <p class="time" id="time">--:--</p>
+  <p class="date" id="date"></p>
+  <p class="count" id="count" hidden></p>
+  <p class="wx" id="wx" hidden></p>
+</main>
+<div class="video" id="video"></div>
+<div class="hint" id="hint"></div>
+
+<script>
+(function(){
+  var q = new URLSearchParams(location.search);
+  var S = {
+    get:function(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } },
+    set:function(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+  };
+  // 設定: URLパラメータ > 保存値 > 既定値
+  function cfg(k, def){
+    var v = q.get(k);
+    if (v !== null && v !== '') { S.set('cfg_' + k, v); return v; }
+    return S.get('cfg_' + k) || def;
+  }
+  var target = cfg('d', '2026-12-05');
+  var label  = cfg('t', '受験');
+  var lat    = parseFloat(cfg('lat', '35.576'));   // 武蔵小杉付近
+  var lon    = parseFloat(cfg('lon', '139.659'));
+  var vid    = cfg('v', '8fHrDSqHy54');            // YouTubeの動画ID(11文字)
+  if (q.get('v') === 'off') { vid = ''; S.set('cfg_v', ''); }
+
+  var W = ['日','月','火','水','木','金','土'];
+  var pad = function(n){ return n < 10 ? '0' + n : '' + n; };
+  var el = function(id){ return document.getElementById(id); };
+
+  // ---- 映像 ----
+  if (vid) {
+    var id = vid.replace(/^.*(?:v=|youtu\.be\/|live\/)/, '').slice(0, 11);
+    var f = document.createElement('iframe');
+    f.src = 'https://www.youtube.com/embed/' + id +
+      '?autoplay=1&mute=1&controls=0&playsinline=1&rel=0&modestbranding=1&enablejsapi=1';
+    f.allow = 'autoplay; encrypted-media; picture-in-picture';
+    f.setAttribute('allowfullscreen', '');
+    el('video').appendChild(f);
+    document.body.classList.add('has-video');
+
+    // 音: ブラウザは無操作での音ありautoplayを止めるので、
+    // 最初のタップ/キー/リモコン操作で音をONにする
+    var cmd = function(fn){
+      try {
+        f.contentWindow.postMessage(JSON.stringify({event:'command', func:fn, args:[]}), '*');
+      } catch(e) {}
+    };
+    var unmuted = false;
+    var sound = function(){
+      if (unmuted) return;
+      unmuted = true;
+      cmd('unMute');
+      cmd('playVideo');
+      el('hint').textContent = '';
+    };
+    ['click','touchstart','keydown','pointerdown'].forEach(function(ev){
+      window.addEventListener(ev, sound, {once:true});
+    });
+    f.addEventListener('load', function(){
+      setTimeout(function(){ cmd('unMute'); }, 1500); // 許可済みなら無操作でも鳴る
+    });
+    el('hint').textContent = '何かボタンを押すと音が出る';
+  }
+
+  // ---- 時計・日付・カウントダウン ----
+  function tick(){
+    var n = new Date();
+    el('time').innerHTML = pad(n.getHours()) + ':' + pad(n.getMinutes()) +
+      '<span class="sec">' + pad(n.getSeconds()) + '</span>';
+    el('date').textContent = (n.getMonth() + 1) + '月' + n.getDate() + '日　' + W[n.getDay()] + '曜日';
+
+    var p = target.split('-');
+    var end = new Date(+p[0], +p[1] - 1, +p[2]);
+    if (!isNaN(end.getTime())) {
+      var today = new Date(n.getFullYear(), n.getMonth(), n.getDate());
+      var days = Math.round((end - today) / 86400000);
+      var c = el('count');
+      c.hidden = false;
+      if (days > 0) c.innerHTML = label + 'まで あと<b>' + days + '</b>日';
+      else if (days === 0) c.innerHTML = '<b>今日</b>が' + label;
+      else c.innerHTML = label + 'から<b>' + (-days) + '</b>日';
+    }
+  }
+  tick();
+  setInterval(tick, 1000);
+
+  // ---- 天気 (Open-Meteo / キー不要) ----
+  function wcode(c){
+    if (c === 0) return '快晴';
+    if (c <= 2) return '晴れ';
+    if (c === 3) return '曇り';
+    if (c === 45 || c === 48) return '霧';
+    if (c >= 51 && c <= 57) return '霧雨';
+    if (c >= 61 && c <= 67) return '雨';
+    if (c >= 71 && c <= 77) return '雪';
+    if (c >= 80 && c <= 82) return 'にわか雨';
+    if (c === 85 || c === 86) return 'にわか雪';
+    if (c >= 95) return '雷雨';
+    return '—';
+  }
+  function weather(){
+    var u = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon +
+      '&current=temperature_2m,weather_code' +
+      '&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max' +
+      '&timezone=Asia%2FTokyo&forecast_days=1';
+    fetch(u).then(function(r){ return r.json(); }).then(function(j){
+      var c = j.current, d = j.daily;
+      var w = el('wx');
+      w.hidden = false;
+      w.innerHTML = '<span class="now">' + wcode(c.weather_code) + ' ' + Math.round(c.temperature_2m) + '°</span>' +
+        '<span class="sub">最高' + Math.round(d.temperature_2m_max[0]) + '° 最低' + Math.round(d.temperature_2m_min[0]) +
+        '° 降水' + d.precipitation_probability_max[0] + '%</span>';
+    }).catch(function(){
+      el('wx').hidden = true;
+    });
+  }
+  weather();
+  setInterval(weather, 30 * 60 * 1000);
+
+  if (!vid) el('hint').textContent = '映像は ?v=YouTubeの動画ID を付けると右に出る';
+})();
+</script>
+</body>
+</html>
