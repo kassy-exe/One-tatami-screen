@@ -17,9 +17,9 @@ body{
 .video{position:fixed;inset:0;overflow:hidden;z-index:0}
 .video iframe{
   position:absolute;top:50%;left:50%;
-  width:max(100vw,177.78vh);
-  height:max(100vh,56.25vw);
-  transform:translate(-50%,-50%);
+  width:1920px;
+  height:1080px;
+  transform:translate(-50%,-50%) scale(var(--s,1));
   border:0;background:#000;
   pointer-events:none; /* クリックやキーを親ページで受ける(音ON用) */
 }
@@ -92,7 +92,35 @@ body{
     f.src = 'https://www.youtube.com/embed/' + id +
       '?autoplay=1&mute=1&controls=0&playsinline=1&rel=0&modestbranding=1&enablejsapi=1';
     f.allow = 'autoplay; encrypted-media; picture-in-picture';
+    f.src += '&vq=hd1080';
     el('video').appendChild(f);
+
+    // プレーヤーを常に1920x1080(CSS px)で作り、画面に合わせて縮小して敷く。
+    // YouTubeは再生枠の大きさで画質を選ぶので、枠が大きければ1080pが選ばれやすい
+    function fit(){
+      // 既定は全体が収まる(上下か左右に黒帯)。?fit=cover で従来の敷き詰めに戻る
+      var pick = cfg('fit', 'contain') === 'cover' ? Math.max : Math.min;
+      var s = pick(window.innerWidth / 1920, window.innerHeight / 1080);
+      f.style.setProperty('--s', s);
+    }
+    fit();
+    window.addEventListener('resize', fit);
+
+    // 逆ぼかし: ピンボケを打ち消す方向にエッジを強調する(アンシャープ)。
+    // ?sharp=0.5 のように強さ(0.1〜1)を付けた時だけ有効。重いのでHY-300で様子見用
+    var sh = parseFloat(cfg('sharp', '0'));
+    if (sh > 0) {
+      var k = Math.min(sh, 1), c = (1 + 4 * k).toFixed(3), n = (-k).toFixed(3);
+      var ns = 'http://www.w3.org/2000/svg';
+      var svg = document.createElementNS(ns, 'svg');
+      svg.setAttribute('width', '0'); svg.setAttribute('height', '0');
+      svg.style.position = 'absolute';
+      svg.innerHTML = '<filter id="sharp" color-interpolation-filters="sRGB">' +
+        '<feConvolveMatrix order="3" preserveAlpha="true" divisor="1" kernelMatrix="' +
+        '0 ' + n + ' 0 ' + n + ' ' + c + ' ' + n + ' 0 ' + n + ' 0"/></filter>';
+      document.body.appendChild(svg);
+      f.style.filter = 'url(#sharp)';
+    }
 
     var cmd = function(fn){
       try { f.contentWindow.postMessage(JSON.stringify({event:'command', func:fn, args:[]}), '*'); } catch(e) {}
